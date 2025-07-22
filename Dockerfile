@@ -23,4 +23,5 @@ ENV PORT 8501
 EXPOSE $PORT
 
 # Start the Streamlit app from the app subdirectory
-CMD ["streamlit", "run", "app/dashboard_app.py", "--server.port=$PORT", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "dashboard_app.py", "--server.port=$PORT", "--server.enableCORS=false"]
+
