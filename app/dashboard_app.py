@@ -5,32 +5,43 @@ import pandas as pd
 import altair as alt
 from sklearn.linear_model import LinearRegression
 
-# --- DATA LOADING ---
-# Dynamically loads Zillow CSVs using sidebar dropdowns.
-# Automatically defaults to the newest file in each category (based on filename sort).
 
-@st.cache_data(ttl=3600)
-def load_data(selected_home, selected_rent):
-    try:
-        home_df = pd.read_csv(f"data/{selected_home}")
-        rent_df = pd.read_csv(f"data/{selected_rent}")
-        return home_df, rent_df
-    except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        return None, None
+from data_fetcher import fetch_if_missing
 
 
+from real_estate_logic import (
+    load_data,
+    filter_and_label_zips,
+    prepare_merged_data,
+    get_national_training_data,
+    calculate_financial_metrics
+)
+
+
+
+
+# --- CONFIG ---
 alt.data_transformers.enable("json")
-
-# --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Rental Dashboard", layout="wide")
-st.title("📊 Real Estate Rental Dashboard - CoC Analyzer")
+
+st.markdown(
+    """
+    <div style="display: flex; align-items: center; background-color:#002244; padding:1rem 2rem; border-radius:8px; margin-bottom:1.5rem;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/4/46/Flag_of_Colorado.svg" width="60" style="margin-right:1rem;">
+        <div>
+            <h1 style="color:#ffd700; margin:0;">Colorado Rental ROI Analyzer</h1>
+            <p style="color:#ffffff; margin:0;">Evaluate rental properties by ZIP — cash flow, taxes, equity, and more</p>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # --- CONSTANTS ---
 LOAN_TO_VALUE = 0.8
 DEPRECIATION_YEARS = 27.5
 
-# --- DEFAULT VALUES ---
 defaults = {
     "interest_rate": 7.0,
     "closing_cost_pct": 2.0,
@@ -51,147 +62,8 @@ def reset_to_defaults():
     for key, value in defaults.items():
         st.session_state[key] = value
 
-# Initialize session state for parameters
 for key, val in defaults.items():
     st.session_state.setdefault(key, val)
-
-# --- DATA PROCESSING ---
-@st.cache_data
-def filter_and_label_zips(df):
-    names = {
-        "80902": "Fort Carson", "80903": "Downtown", "80904": "Old Colorado City",
-        "80905": "Southwest", "80906": "Broadmoor", "80907": "North Central",
-        "80908": "Black Forest", "80909": "East Central", "80910": "Southeast",
-        "80911": "Security-Widefield", "80915": "Cimarron Hills", "80916": "South Central",
-        "80917": "Village Seven", "80918": "Austin Bluffs", "80919": "Rockrimmon",
-        "80920": "Briargate", "80921": "Northgate", "80922": "Stetson Hills",
-        "80923": "Ridgeview", "80924": "Cordera", "80925": "Schriever Area",
-        "80926": "Cheyenne Mountain", "80927": "Banning Lewis", "80928": "SE Rural",
-        "80929": "Ellicott", "80930": "East Rural", "80938": "East Springs",
-        "80939": "BL North", "80829": "Manitou", "80817": "Fountain"
-    }
-    df = df.copy()
-    df.rename(columns={"RegionName": "Zip_Code"}, inplace=True)
-    df["Zip_Code"] = df["Zip_Code"].astype(str)
-    df["Zip_Label"] = df["Zip_Code"] + " - " + df["Zip_Code"].map(names)
-    return df
-
-@st.cache_data
-def prepare_merged_data(home_df, rent_df):
-    if home_df is None or rent_df is None:
-        return None, None
-
-    processed_home_df = filter_and_label_zips(home_df)
-    processed_rent_df = filter_and_label_zips(rent_df)
-
-    home_dates = [col for col in processed_home_df.columns if col.count("-") == 2]
-    rent_dates = [col for col in processed_rent_df.columns if col.count("-") == 2]
-    common_dates = sorted(set(home_dates).intersection(rent_dates))
-
-    if not common_dates:
-        st.error("No matching date columns found in the datasets.")
-        return None, None
-
-    latest_month = common_dates[-1]
-
-    home_subset = processed_home_df[["Zip_Code", "Zip_Label", latest_month]].copy()
-    rent_subset = processed_rent_df[["Zip_Code", latest_month]].copy()
-    merged = pd.merge(home_subset, rent_subset, on="Zip_Code", suffixes=("_Price", "_Rent"))
-    merged["Home_Price"] = pd.to_numeric(merged[f"{latest_month}_Price"], errors="coerce")
-    merged["Rent"] = pd.to_numeric(merged[f"{latest_month}_Rent"], errors="coerce")
-
-    return merged.dropna().copy(), latest_month
-
-@st.cache_data
-def get_national_training_data(home_df, rent_df, latest_month):
-    home = home_df.copy()
-    rent = rent_df.copy()
-
-    home = home.rename(columns={"RegionName": "Zip_Code"})
-    rent = rent.rename(columns={"RegionName": "Zip_Code"})
-
-    home["Zip_Code"] = home["Zip_Code"].astype(str).str.zfill(5)
-    rent["Zip_Code"] = rent["Zip_Code"].astype(str).str.zfill(5)
-
-    home_prices = home[["Zip_Code", latest_month]].rename(columns={latest_month: "Home_Price"})
-    rents = rent[["Zip_Code", latest_month]].rename(columns={latest_month: "Rent"})
-
-    merged = pd.merge(home_prices, rents, on="Zip_Code")
-    merged = merged.dropna()
-    merged = merged[(merged["Home_Price"] > 0) & (merged["Rent"] > 0)]
-
-    return merged
-
-# --- FINANCIAL CALCULATIONS ---
-@st.cache_data
-def calculate_financial_metrics(valid_data, params):
-    data = valid_data.copy()
-
-    int_rate = params["interest_rate"] / 100
-    monthly_int = int_rate / 12
-    months = 30 * 12
-    years = params["appreciation_years"]
-
-    loan_amt = data["Home_Price"] * LOAN_TO_VALUE
-    mortgage = loan_amt * (monthly_int * (1 + monthly_int) ** months) / ((1 + monthly_int) ** months - 1)
-
-    monthly_ins = params["insurance_annual"] / 12
-    maint = data["Home_Price"] * params["maintenance_rate"] / 12
-    vacancy = data["Rent"] * params["vacancy_rate"]
-    mgmt_fee = data["Rent"] * params["property_mgmt_pct"]
-    capex = params["capex_monthly"]
-    property_tax = data["Home_Price"] * (params["property_tax_rate"] / 100) / 12
-
-    expenses = mortgage + monthly_ins + maint + vacancy + mgmt_fee + capex + property_tax
-    data["Monthly_CF"] = data["Rent"] - expenses
-    data["Annual_CF"] = data["Monthly_CF"] * 12
-
-    data["Cash_Down"] = data["Home_Price"] * (1 - LOAN_TO_VALUE)
-    data["Closing_Costs"] = data["Home_Price"] * (params["closing_cost_pct"] / 100)
-    data["Cash_In"] = data["Cash_Down"] + data["Closing_Costs"]
-
-    data["Structure_Value"] = data["Home_Price"] * params["structure_pct"]
-    data["Depreciation"] = data["Structure_Value"] / DEPRECIATION_YEARS
-    data["Tax_Savings"] = data["Depreciation"] * (params["marginal_tax_rate"] / 100)
-
-    principal_year1 = []
-    for i in range(len(data)):
-        bal = loan_amt.iloc[i]
-        pmt = mortgage.iloc[i]
-        paid = 0
-        for _ in range(12):
-            int_pmt = bal * monthly_int
-            princ_pmt = pmt - int_pmt
-            paid += princ_pmt
-            bal -= princ_pmt
-        principal_year1.append(paid)
-
-    data["Basic_CoC"] = (data["Annual_CF"] / data["Cash_In"]) * 100
-    data["Advanced_CoC"] = (
-        (data["Annual_CF"] + data["Tax_Savings"] + pd.Series(principal_year1, index=data.index))
-        / data["Cash_In"]
-    ) * 100
-
-    total_principal_paid = []
-    for i in range(len(data)):
-        bal = loan_amt.iloc[i]
-        pmt = mortgage.iloc[i]
-        paid = 0
-        for _ in range(years * 12):
-            int_pmt = bal * monthly_int
-            princ_pmt = pmt - int_pmt
-            paid += princ_pmt
-            bal -= princ_pmt
-        total_principal_paid.append(paid)
-
-    app_rate = params["annual_appreciation_pct"] / 100
-    data["Appreciation_Gain"] = data["Home_Price"] * ((1 + app_rate) ** years) - data["Home_Price"]
-    data["Equity_From_Paydown"] = pd.Series(total_principal_paid, index=data.index)
-    data["MultiYear_Advanced_CoC_Dollars"] = data["Annual_CF"] * years + data["Tax_Savings"] * years + data["Equity_From_Paydown"]
-    data["Total_Equity_Gain"] = data["Appreciation_Gain"] + data["MultiYear_Advanced_CoC_Dollars"]
-    data["Total_ROC"] = (data["Total_Equity_Gain"] / data["Cash_In"]) * 100
-
-    return data
 
 # --- SIDEBAR SETTINGS ---
 def create_sidebar():
@@ -199,12 +71,10 @@ def create_sidebar():
     if st.sidebar.button("🔄 Reset to Defaults"):
         reset_to_defaults()
 
-    # Loan Settings
     st.sidebar.markdown("#### Loan Settings")
     st.sidebar.slider("Interest Rate (%)", 2.0, 12.0, value=st.session_state.get("interest_rate", defaults["interest_rate"]), step=0.1, key="interest_rate")
     st.sidebar.slider("Closing Costs (%)", 0.0, 5.0, value=st.session_state.get("closing_cost_pct", defaults["closing_cost_pct"]), step=0.1, key="closing_cost_pct")
 
-    # Property Expenses
     st.sidebar.markdown("#### Property Expenses")
     maintenance_pct = st.sidebar.slider("Annual Maintenance (% of property value)", 0.0, 5.0, value=st.session_state.get("maintenance_rate", defaults["maintenance_rate"]) * 100, step=0.1, key="maintenance_rate_pct")
     st.session_state["maintenance_rate"] = maintenance_pct / 100
@@ -221,7 +91,6 @@ def create_sidebar():
 
     st.sidebar.slider("Monthly Capital Expenditures ($)", 0, 1000, value=st.session_state.get("capex_monthly", defaults["capex_monthly"]), step=25, key="capex_monthly")
 
-    # Tax & Appreciation
     st.sidebar.markdown("#### Tax & Appreciation")
     st.sidebar.slider("Marginal Tax Rate (%)", 0.0, 50.0, value=st.session_state.get("marginal_tax_rate", defaults["marginal_tax_rate"]), step=1.0, key="marginal_tax_rate")
 
@@ -229,10 +98,9 @@ def create_sidebar():
     st.session_state["structure_pct"] = structure_pct / 100
 
     st.sidebar.slider("Annual Appreciation Rate (%)", 0.0, 10.0, value=st.session_state.get("annual_appreciation_pct", defaults["annual_appreciation_pct"]), step=0.1, key="annual_appreciation_pct")
-
     st.sidebar.slider("Investment Horizon (years)", 1, 30, value=st.session_state.get("appreciation_years", defaults["appreciation_years"]), step=1, key="appreciation_years")
 
-# --- VISUALIZATION FUNCTION ---
+# --- CHART UTILITY ---
 def create_bar_chart(data, x, y, title, y_axis_title):
     chart = alt.Chart(data).mark_bar().encode(
         x=alt.X(y, title=y_axis_title),
@@ -245,44 +113,180 @@ def create_bar_chart(data, x, y, title, y_axis_title):
     ).interactive()
     return chart
 
-# --- MAIN APP ---
+def run_deal_analyzer_tab(national_df):
+    st.header("📍 Deal Analyzer")
+
+    st.markdown("Use this tool to evaluate a specific property you're considering — plug in actual listing info and get projected returns.")
+
+    st.subheader("Property Details")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        home_price_input = st.number_input("Purchase Price ($)", min_value=50000, max_value=2000000, value=400000, step=5000)
+
+    with col2:
+        zip_input = st.text_input("ZIP Code (optional)", max_chars=5)
+
+    predicted_rent = None
+    intercept_nat, slope_nat = None, None
+
+    if national_df is not None and len(national_df) >= 100:
+        X_nat = np.log(national_df[["Home_Price"]].values)
+        y_nat = np.log(national_df["Rent"].values)
+
+        national_model = LinearRegression()
+        national_model.fit(X_nat, y_nat)
+
+        slope_nat = national_model.coef_[0]
+        intercept_nat = national_model.intercept_
+
+        if home_price_input > 0:
+            try:
+                base_rent = np.exp(intercept_nat + slope_nat * np.log(home_price_input))
+                predicted_rent = base_rent
+
+                # Optional ZIP-based adjustment
+                if zip_input:
+                    zip_input = zip_input.zfill(5)
+                    local_rents = national_df[national_df["Zip_Code"] == zip_input]
+
+                    if not local_rents.empty:
+                        actual = local_rents.iloc[0]["Rent"]
+                        expected = np.exp(intercept_nat + slope_nat * np.log(local_rents.iloc[0]["Home_Price"]))
+                        adjustment_ratio = actual / expected if expected > 0 else 1.0
+
+                        predicted_rent *= adjustment_ratio  # adjust based on how that ZIP behaves
+                        st.success(f"📍 ZIP Adjustment Applied (ratio: {adjustment_ratio:.2f})")
+
+                st.success(f"📈 Predicted Rent: **${predicted_rent:,.0f}**")
+
+            except Exception as e:
+                st.warning("⚠️ Could not estimate rent.")
+                st.text(str(e))
+
+    else:
+        st.info("National rent model unavailable (insufficient data).")
+
+    st.subheader("Income & Expense Estimates")
+
+    col3, col4 = st.columns(2)
+    with col3:
+        rent_input = st.number_input("Monthly Rent ($)", min_value=500, max_value=10000,
+                                     value=int(predicted_rent) if predicted_rent else 2500, step=50)
+
+    with col4:
+        down_payment_pct = st.slider("Down Payment (%)", 0.0, 100.0, 20.0, 1.0)
+
+    st.markdown("---")
+    # --- Compute Full Returns ---
+    loan_amount = home_price_input * (1 - down_payment_pct / 100)
+    closing_costs = home_price_input * (st.session_state["closing_cost_pct"] / 100)
+    cash_down = home_price_input * (down_payment_pct / 100)
+    cash_in = cash_down + closing_costs
+
+    int_rate = st.session_state["interest_rate"] / 100
+    monthly_int = int_rate / 12
+    months = 30 * 12
+    mortgage = loan_amount * (monthly_int * (1 + monthly_int)**months) / ((1 + monthly_int)**months - 1)
+
+    monthly_ins = st.session_state["insurance_annual"] / 12
+    maint = home_price_input * st.session_state["maintenance_rate"] / 12
+    vacancy = rent_input * st.session_state["vacancy_rate"]
+    mgmt_fee = rent_input * st.session_state["property_mgmt_pct"]
+    capex = st.session_state["capex_monthly"]
+    property_tax = home_price_input * (st.session_state["property_tax_rate"] / 100) / 12
+
+    expenses = mortgage + monthly_ins + maint + vacancy + mgmt_fee + capex + property_tax
+    monthly_cf = rent_input - expenses
+    annual_cf = monthly_cf * 12
+
+    structure_value = home_price_input * st.session_state["structure_pct"]
+    depreciation = structure_value / DEPRECIATION_YEARS
+    tax_savings = depreciation * (st.session_state["marginal_tax_rate"] / 100)
+
+    # Estimate principal paydown (Year 1)
+    bal = loan_amount
+    paid = 0
+    for _ in range(12):
+        int_pmt = bal * monthly_int
+        princ_pmt = mortgage - int_pmt
+        paid += princ_pmt
+        bal -= princ_pmt
+    principal_paid = paid
+
+    # Appreciation
+    years = st.session_state["appreciation_years"]
+    app_rate = st.session_state["annual_appreciation_pct"] / 100
+    appreciation_gain = home_price_input * ((1 + app_rate) ** years - 1)
+
+    # Total Return
+    total_advanced = annual_cf * years + tax_savings * years + bal - loan_amount
+    total_return = appreciation_gain + total_advanced
+    total_roc = (total_return / cash_in) * 100
+
+    # --- Display Results ---
+    st.markdown("### 💵 Deal Summary Metrics")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Monthly Cash Flow", f"${monthly_cf:,.0f}")
+    col2.metric("Annual Cash Flow", f"${annual_cf:,.0f}")
+    col3.metric("Basic CoC", f"{(annual_cf / cash_in) * 100:.1f}%")
+
+    col4, col5, col6 = st.columns(3)
+    col4.metric("1st-Year ROI", f"{((annual_cf + tax_savings + principal_paid) / cash_in) * 100:.1f}%")
+    col5.metric(f"{years}-Year ROI", f"{total_roc:.1f}%")
+    col6.metric("Total Return", f"${total_return:,.0f}")
+
+# --- MAIN APP ENTRY ---
 def main():
+    # fetch_if_missing() # Uncomment to fetch data if needed
     create_sidebar()
 
-    # Select from available files in /data
-    all_files = os.listdir("data")
-    home_files = sorted([f for f in all_files if "home_values" in f and f.endswith(".csv")], reverse=True)
-    rent_files = sorted([f for f in all_files if "rent_index" in f and f.endswith(".csv")], reverse=True)
+    # 📁 Load available files
+    DATA_FOLDER = os.path.join(os.path.dirname(__file__), "data")
 
+
+
+    all_files = os.listdir(DATA_FOLDER)
+    home_files = sorted([f for f in all_files if "home" in f and f.endswith(".csv")], reverse=True)
+    rent_files = sorted([f for f in all_files if "rent" in f and f.endswith(".csv")], reverse=True)
+
+
+    # 🧩 Dropdowns — NOT inside a cached function!
     selected_home = st.sidebar.selectbox("Select Home Value File", home_files, index=0)
     selected_rent = st.sidebar.selectbox("Select Rent Index File", rent_files, index=0)
 
     st.caption(f"Using home values from: `{selected_home}`")
     st.caption(f"Using rent data from: `{selected_rent}`")
 
-    # Load selected data
-    home_df, rent_df = load_data(selected_home, selected_rent)
+    # 🧠 Cached read from disk
+    home_df, rent_df = load_data(
+        os.path.join(DATA_FOLDER, selected_home),
+        os.path.join(DATA_FOLDER, selected_rent)
+    )
+
 
     if home_df is None or rent_df is None:
-        st.error("Unable to proceed without data. Please check your data files.")
+        st.error("Could not load Zillow data.")
         return
 
-    # Process data
     valid_data, latest_month = prepare_merged_data(home_df, rent_df)
     if valid_data is None:
+        st.error("Could not merge Zillow data.")
         return
-    national_df = get_national_training_data(home_df, rent_df, latest_month)
 
-    # Run ROI model
+    national_df = get_national_training_data(home_df, rent_df, latest_month)
     params = {k: st.session_state[k] for k in defaults}
     results = calculate_financial_metrics(valid_data, params)
 
     tab_labels = [
         "Basic Cash on Cash",
         "First-Year ROI",
-        "Total Equity Gain",
+        "Total Return",
         "Data Explorer",
-        "Rent Estimator"
+        "Rent Estimator",
+        "Deal Analyzer"
     ]
 
     selected = st.radio(
@@ -295,7 +299,7 @@ def main():
 
     if selected == "Basic Cash on Cash":
         top = results.sort_values("Basic_CoC", ascending=False).head(10)
-        st.markdown("**ℹ️ Basic CoC** reflects first-year cash flow only.")
+        st.markdown("**ℹ️ Basic CoC shows the first-year cash flow return as a percentage of the initial cash investment (down payment + closing costs). It includes rent minus all monthly expenses, but does not factor in tax benefits or long-term equity gains.**")
         st.altair_chart(
             create_bar_chart(
                 top,
@@ -309,7 +313,7 @@ def main():
 
     elif selected == "First-Year ROI":
         top = results.sort_values("Advanced_CoC", ascending=False).head(10)
-        st.markdown("**ℹ️ First-Year ROI** includes depreciation tax benefits and equity pay-down.")
+        st.markdown("**ℹ️ First-Year ROI reflects the total return in year one as a percentage of the initial cash investment. It includes cash flow plus estimated tax savings from depreciation and loan principal paydown, but excludes long-term appreciation.**")
         st.altair_chart(
             create_bar_chart(
                 top,
@@ -321,48 +325,89 @@ def main():
             use_container_width=True
         )
 
-    elif selected == "Total Equity Gain":
-        top = results.sort_values("Total_Equity_Gain", ascending=False).head(10)
+    elif selected == "Total Return":
+        top = results.sort_values("Total_Return", ascending=False).head(10)
         yrs = st.session_state.appreciation_years
-        st.markdown(f"**ℹ️ Total Equity Gain** over {yrs} years, including appreciation and paydown.")
+        st.markdown("**ℹ️ Total Return** represents your total gain over {yrs} years, including appreciation in property value, cumulative rental cash flow, tax savings from depreciation, and equity gained through mortgage paydown. Unlike shorter-term metrics, this gives a full picture of both income and long-term wealth creation.")
         st.altair_chart(
             create_bar_chart(
                 top,
                 "Zip_Label",
-                "Total_Equity_Gain",
-                f"Top ZIPs – Total Equity Gain Over {yrs} Years",
-                "Total Equity Gain ($)"
+                "Total_Return",
+                f"Top ZIPs – Total Return Over {yrs} Years",
+                "Total Return ($)"
             ),
             use_container_width=True
         )
-
     elif selected == "Data Explorer":
         st.subheader("Data Explorer")
+
+        # Human-readable labels for UI
+        pretty_labels = {
+            "Basic_CoC": "Basic Cash on Cash",
+            "Advanced_CoC": "First-Year ROI",
+            "Total_ROC": "Total ROI",
+            "Total_Return": "Total Return ($)",
+            "Home_Price": "Home Price ($)",
+            "Rent": "Monthly Rent ($)",
+            "Cash_In": "Cash Invested ($)",
+            "Zip_Label": "ZIP Code"
+        }
+
+
+        # Columns to show (raw keys)
+        display_cols = [
+            "Zip_Label", "Home_Price", "Rent",
+            "Basic_CoC", "Advanced_CoC",
+            "Total_ROC", "Total_Return", "Cash_In"
+]
+
+
         col1, col2, col3 = st.columns(3)
+
         with col1:
             min_price = int(results["Home_Price"].min())
             max_price = int(results["Home_Price"].max())
             price_range = st.slider("Home Price Range", min_price, max_price, (min_price, max_price))
+
         with col2:
+            sort_fields = [
+                "Basic_CoC", "Advanced_CoC", "Total_ROC",
+                "Total_Return", "Home_Price", "Rent"
+            ]
             sort_by = st.selectbox(
                 "Sort By",
-                ["Basic_CoC", "Advanced_CoC", "Total_ROC", "Total_Equity_Gain", "Home_Price", "Rent"]
+                options=sort_fields,
+                format_func=lambda x: pretty_labels.get(x, x)
             )
+
         with col3:
             ascending = st.checkbox("Ascending Order", False)
 
+        # Filter and sort
         filtered = results[
             (results["Home_Price"] >= price_range[0]) &
             (results["Home_Price"] <= price_range[1])
         ].sort_values(sort_by, ascending=ascending)
 
-        display_df = filtered.rename(columns={"Advanced_CoC": "First-Year ROI"})
-        st.dataframe(display_df[[
-            "Zip_Label", "Home_Price", "Rent",
-            "Basic_CoC", "First-Year ROI",
-            "Total_ROC", "Total_Equity_Gain", "Cash_In"
-        ]])
+        # Format for display
+        display_df = filtered[display_cols].rename(columns=pretty_labels)
 
+        # Apply custom formatting
+        format_dict = {
+            "Basic Cash on Cash": "{:.1f}%",
+            "First-Year ROI": "{:.1f}%",
+            "Total ROI": "{:.1f}%",
+            "Total Return ($)": "${:,.0f}",
+            "Home Price ($)": "${:,.0f}",
+            "Monthly Rent ($)": "${:,.0f}",
+            "Cash Invested ($)": "${:,.0f}"
+        }
+
+        # Show styled table
+        st.dataframe(display_df.style.format(format_dict))
+
+        # Export CSV
         csv = display_df.to_csv(index=False)
         st.download_button(
             "Download Data as CSV",
@@ -371,6 +416,7 @@ def main():
             "text/csv",
             key="download-csv"
         )
+
 
     elif selected == "Rent Estimator":
 
@@ -534,6 +580,9 @@ def main():
                 f"</p>",
                 unsafe_allow_html=True
             )
+
+    elif selected == "Deal Analyzer":
+        run_deal_analyzer_tab(national_df)
 
 if __name__ == "__main__":
     main()

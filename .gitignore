@@ -1,4 +1,14 @@
-data/zillow_home_values_2025-05-21.csv
-data/zillow_home_values_2025-07-03.csv
-data/zillow_home_values_2025-05-21.csv
-data/zillow_home_values_2025-07-03.csv
+# Ignore Python bytecode
+__pycache__/
+*.pyc
+
+# Ignore logs or temporary files
+*.log
+*.tmp
+
+# Ignore OS/IDE-specific clutter
+.DS_Store
+.vscode/
+
+# Ignore Streamlit config/secrets only if not used
+.streamlit/secrets.toml

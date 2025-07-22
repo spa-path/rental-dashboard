@@ -8,15 +8,15 @@ import streamlit as st
 import pandas as pd
 
 
-def load_data(selected_home, selected_rent):
-    print("📁 Actually loading from:", selected_home, selected_rent)
+def load_data(home_path, rent_path):
     try:
-        home_df = pd.read_csv(f"data/{selected_home}")
-        rent_df = pd.read_csv(f"data/{selected_rent}")
+        home_df = pd.read_csv(home_path)
+        rent_df = pd.read_csv(rent_path)
         return home_df, rent_df
     except Exception as e:
         print("❌ Error loading files:", e)
         return None, None
+
 
 
 
@@ -145,8 +145,15 @@ def calculate_financial_metrics(valid_data, params):
     app_rate = params["annual_appreciation_pct"] / 100
     data["Appreciation_Gain"] = data["Home_Price"] * ((1 + app_rate) ** years) - data["Home_Price"]
     data["Equity_From_Paydown"] = pd.Series(total_principal_paid, index=data.index)
-    data["MultiYear_Advanced_CoC_Dollars"] = data["Annual_CF"] * years + data["Tax_Savings"] * years + data["Equity_From_Paydown"]
-    data["Total_Equity_Gain"] = data["Appreciation_Gain"] + data["MultiYear_Advanced_CoC_Dollars"]
-    data["Total_ROC"] = (data["Total_Equity_Gain"] / data["Cash_In"]) * 100
+
+    data["MultiYear_Income_Gain"] = (
+        data["Annual_CF"] * years +
+        data["Tax_Savings"] * years +
+        data["Equity_From_Paydown"]
+    )
+
+    data["Total_Return"] = data["Appreciation_Gain"] + data["MultiYear_Income_Gain"]
+    data["Total_ROC"] = (data["Total_Return"] / data["Cash_In"]) * 100
+
 
     return data
