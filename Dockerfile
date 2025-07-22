@@ -10,14 +10,17 @@ RUN apt-get update && apt-get install -y build-essential
 # Copy your entire project into the container
 COPY . .
 
-# Install Python dependencies from a file (you'll create this next)
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Prevent Streamlit from showing telemetry prompts
+# Prevent Streamlit telemetry prompts
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
-# Expose the port Streamlit runs on
-EXPOSE 8501
+# Set the port to match Render’s dynamic environment
+ENV PORT 8501
 
-# Start the app
-CMD ["streamlit", "run", "dashboard_app.py"]
+# Expose the port for local testing or Render deployment
+EXPOSE $PORT
+
+# Start the Streamlit app from the app subdirectory
+CMD ["streamlit", "run", "app/dashboard_app.py", "--server.port=$PORT", "--server.address=0.0.0.0"]
