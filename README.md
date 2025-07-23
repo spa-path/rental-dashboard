@@ -4,7 +4,8 @@ This interactive dashboard helps investors evaluate rental property returns acro
 
 ## Live Demo
 
-[https://co-real-estate.onrender.com/?role=investor](https://co-real-estate.onrender.com/?role=investor)
+https://co-real-estate-landing.onrender.com
+
 
 ## Features
 
