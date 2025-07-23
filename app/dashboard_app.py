@@ -433,12 +433,13 @@ def main():
 
             st.markdown("### National Rent Model (Log-Log) - seen below")
             st.caption(f"""
-            **Model Equation:**  log(Rent) = {intercept_nat:.2f} + {slope_nat:.3f} × log(Home Price)  
+            **Model Equation:** ln(Rent) = {intercept_nat:.2f} + {slope_nat:.3f} × ln(Home Price)  
             **R² = {r2_nat:.3f}** based on {len(national_df):,} ZIP codes nationwide.
 
             This model estimates rent based on the national trend across all U.S. ZIP codes.  
             It's useful as a benchmark to compare against Colorado Springs ZIPs.
             """)
+
         else:
             st.info("National trend model could not be created — missing or invalid data.")
 
