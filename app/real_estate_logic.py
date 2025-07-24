@@ -153,5 +153,18 @@ def calculate_financial_metrics(valid_data, params):
     data["Total_Return"] = data["Appreciation_Gain"] + data["MultiYear_Income_Gain"]
     data["Total_ROC"] = (data["Total_Return"] / data["Cash_In"]) * 100
 
+    # Net Operating Income (NOI) = Rent minus OpEx (no mortgage or tax savings)
+    data["NOI"] = (
+        data["Rent"]
+        - (data["Rent"] * params["vacancy_rate"])
+        - (data["Rent"] * params["property_mgmt_pct"])
+        - (data["Home_Price"] * params["maintenance_rate"] / 12)
+        - (params["insurance_annual"] / 12)
+        - (params["capex_monthly"])
+        - (data["Home_Price"] * (params["property_tax_rate"] / 100) / 12)
+    )
+
+    data["Cap_Rate"] = (data["NOI"] * 12 / data["Home_Price"]) * 100
+
 
     return data

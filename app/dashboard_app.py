@@ -303,18 +303,51 @@ def main():
     )
 
     if selected == "Basic Cash on Cash":
-        top = results.sort_values("Basic_CoC", ascending=False).head(10)
-        st.markdown("**ℹ️ Basic CoC shows the first-year cash flow return as a percentage of the initial cash investment (down payment + closing costs). It includes rent minus all monthly expenses, but does not factor in tax benefits or long-term equity gains.**")
-        st.altair_chart(
-            create_bar_chart(
+        # Add a small space above the "Metric:" row
+        st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+
+        # Inline label + left-aligned radio buttons
+        col1, col2 = st.columns([0.12, 0.88])  # Adjusted ratio to shift radio buttons left
+        with col1:
+            st.markdown("**Metric:**")
+        with col2:
+            metric_choice = st.radio(
+                label="",
+                options=["Basic CoC", "Cap Rate"],
+                horizontal=True,
+                key="metric_choice"
+            )
+
+        if metric_choice == "Basic CoC":
+            top = results.sort_values("Basic_CoC", ascending=False).head(10)
+            st.markdown(
+                "**ℹ️ Basic CoC** shows the first-year cash flow return as a percentage of the initial cash investment (down payment + closing costs). "
+                "It includes rent minus all monthly expenses, but does not factor in tax benefits or long-term equity gains."
+            )
+            chart = create_bar_chart(
                 top,
                 "Zip_Label",
                 "Basic_CoC",
-                f"Top ZIPs – Basic CoC",
+                "Top ZIPs – Basic CoC",
                 "Basic CoC Return (%)"
-            ),
-            use_container_width=True
-        )
+            )
+        else:
+            top = results.sort_values("Cap_Rate", ascending=False).head(10)
+            st.markdown(
+                "**ℹ️ Cap Rate** shows the property's net operating income as a percentage of its purchase price. "
+                "It excludes mortgage payments and tax savings, making it useful for comparing property income efficiency across markets."
+            )
+            chart = create_bar_chart(
+                top,
+                "Zip_Label",
+                "Cap_Rate",
+                "Top ZIPs – Cap Rate",
+                "Cap Rate (%)"
+            )
+
+        st.altair_chart(chart, use_container_width=True)
+
+
 
     elif selected == "First-Year ROI":
         top = results.sort_values("Advanced_CoC", ascending=False).head(10)
