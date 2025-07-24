@@ -17,11 +17,6 @@ def load_data(home_path, rent_path):
         print("❌ Error loading files:", e)
         return None, None
 
-
-
-
-
-LOAN_TO_VALUE = 0.8
 DEPRECIATION_YEARS = 27.5
 
 # Maps Colorado Springs ZIP codes to readable neighborhood labels.
@@ -90,8 +85,11 @@ def calculate_financial_metrics(valid_data, params):
     months = 30 * 12
     years = params["appreciation_years"]
 
-    loan_amt = data["Home_Price"] * LOAN_TO_VALUE
-    mortgage = loan_amt * (monthly_int * (1 + monthly_int) ** months) / ((1 + monthly_int) ** months - 1)
+    data["Down_Payment"] = data["Home_Price"] * (params["down_payment_pct"] / 100)
+    data["Loan_Amount"] = data["Home_Price"] - data["Down_Payment"]
+
+    mortgage = data["Loan_Amount"] * (monthly_int * (1 + monthly_int) ** months) / ((1 + monthly_int) ** months - 1)
+
 
     monthly_ins = params["insurance_annual"] / 12
     maint = data["Home_Price"] * params["maintenance_rate"] / 12
@@ -104,7 +102,7 @@ def calculate_financial_metrics(valid_data, params):
     data["Monthly_CF"] = data["Rent"] - expenses
     data["Annual_CF"] = data["Monthly_CF"] * 12
 
-    data["Cash_Down"] = data["Home_Price"] * (1 - LOAN_TO_VALUE)
+    data["Cash_Down"] = data["Down_Payment"]
     data["Closing_Costs"] = data["Home_Price"] * (params["closing_cost_pct"] / 100)
     data["Cash_In"] = data["Cash_Down"] + data["Closing_Costs"]
 
@@ -114,7 +112,7 @@ def calculate_financial_metrics(valid_data, params):
 
     principal_year1 = []
     for i in range(len(data)):
-        bal = loan_amt.iloc[i]
+        bal = data["Loan_Amount"].iloc[i]
         pmt = mortgage.iloc[i]
         paid = 0
         for _ in range(12):
@@ -132,7 +130,7 @@ def calculate_financial_metrics(valid_data, params):
 
     total_principal_paid = []
     for i in range(len(data)):
-        bal = loan_amt.iloc[i]
+        bal = data["Loan_Amount"].iloc[i]
         pmt = mortgage.iloc[i]
         paid = 0
         for _ in range(years * 12):

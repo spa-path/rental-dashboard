@@ -39,10 +39,10 @@ st.markdown(
 
 
 # --- CONSTANTS ---
-LOAN_TO_VALUE = 0.8
 DEPRECIATION_YEARS = 27.5
 
 defaults = {
+    "down_payment_pct": 20.0,
     "interest_rate": 7.0,
     "closing_cost_pct": 2.0,
     "maintenance_rate": 0.015,
@@ -72,6 +72,7 @@ def create_sidebar():
         reset_to_defaults()
 
     st.sidebar.markdown("#### Loan Settings")
+    st.sidebar.slider("Down Payment (%)", 0.0, 100.0, value=st.session_state.get("down_payment_pct", 20.0), step=1.0, key="down_payment_pct")
     st.sidebar.slider("Interest Rate (%)", 2.0, 12.0, value=st.session_state.get("interest_rate", defaults["interest_rate"]), step=0.1, key="interest_rate")
     st.sidebar.slider("Closing Costs (%)", 0.0, 5.0, value=st.session_state.get("closing_cost_pct", defaults["closing_cost_pct"]), step=0.1, key="closing_cost_pct")
 
@@ -176,9 +177,11 @@ def run_deal_analyzer_tab(national_df):
                                      value=int(predicted_rent) if predicted_rent else 2500, step=50)
 
     with col4:
-        down_payment_pct = st.slider("Down Payment (%)", 0.0, 100.0, 20.0, 1.0)
+        down_payment_pct = st.slider("Down Payment (%)", 0.0, 100.0, value=st.session_state.get("down_payment_pct", 20.0), step=1.0)
+
 
     st.markdown("---")
+
     # --- Compute Full Returns ---
     loan_amount = home_price_input * (1 - down_payment_pct / 100)
     closing_costs = home_price_input * (st.session_state["closing_cost_pct"] / 100)
@@ -278,7 +281,9 @@ def main():
 
     national_df = get_national_training_data(home_df, rent_df, latest_month)
     params = {k: st.session_state[k] for k in defaults}
+    params["down_payment_pct"] = st.session_state["down_payment_pct"]
     results = calculate_financial_metrics(valid_data, params)
+
 
     tab_labels = [
         "Basic Cash on Cash",
