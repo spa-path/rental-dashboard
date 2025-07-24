@@ -91,6 +91,7 @@ Global investment parameters that can be adjusted to update all analysis tabs:
 * Support refinancing analysis
 * Improve mobile responsiveness
 * Enable favicon and metadata via Flask landing page
+* STR optimize dashboard (including high op costs...)
 
 ## License
 
