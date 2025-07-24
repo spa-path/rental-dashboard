@@ -30,7 +30,7 @@ st.markdown(
         <img src="https://upload.wikimedia.org/wikipedia/commons/4/46/Flag_of_Colorado.svg" width="60" style="margin-right:1rem;">
         <div>
             <h1 style="color:#ffd700; margin:0;">Colorado Rental ROI Analyzer</h1>
-            <p style="color:#ffffff; margin:0;">Evaluate rental properties by ZIP — cash flow, taxes, equity, and more</p>
+            <p style="color:#ffffff; margin:0;">Evaluate rental properties by ZIP — cash flow, taxes, equity, and more — optimized for Single Family Homes</p>
         </div>
     </div>
     """,
@@ -44,7 +44,7 @@ DEPRECIATION_YEARS = 27.5
 defaults = {
     "down_payment_pct": 20.0,
     "interest_rate": 7.0,
-    "closing_cost_pct": 2.0,
+    "closing_cost_pct": 5.0,
     "maintenance_rate": 0.015,
     "insurance_annual": 1300,
     "vacancy_rate": 0.05,
@@ -74,7 +74,7 @@ def create_sidebar():
     st.sidebar.markdown("#### Loan Settings")
     st.sidebar.slider("Down Payment (%)", 0.0, 100.0, value=st.session_state.get("down_payment_pct", 20.0), step=1.0, key="down_payment_pct")
     st.sidebar.slider("Interest Rate (%)", 2.0, 12.0, value=st.session_state.get("interest_rate", defaults["interest_rate"]), step=0.1, key="interest_rate")
-    st.sidebar.slider("Closing Costs (%)", 0.0, 5.0, value=st.session_state.get("closing_cost_pct", defaults["closing_cost_pct"]), step=0.1, key="closing_cost_pct")
+    st.sidebar.slider("Closing Costs (%)", 0.0, 10.0, value=st.session_state.get("closing_cost_pct", defaults["closing_cost_pct"]), step=0.1, key="closing_cost_pct")
 
     st.sidebar.markdown("#### Property Expenses")
     maintenance_pct = st.sidebar.slider("Annual Maintenance (% of property value)", 0.0, 5.0, value=st.session_state.get("maintenance_rate", defaults["maintenance_rate"]) * 100, step=0.1, key="maintenance_rate_pct")
@@ -286,7 +286,7 @@ def main():
 
 
     tab_labels = [
-        "Basic Cash on Cash",
+        "Cash on Cash & Cap Rate",
         "First-Year ROI",
         "Total Return",
         "Data Explorer",
@@ -302,7 +302,7 @@ def main():
         key="selected_tab"
     )
 
-    if selected == "Basic Cash on Cash":
+    if selected == "Cash on Cash & Cap Rate":
         # Add a small space above the "Metric:" row
         st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
 
@@ -508,7 +508,13 @@ def main():
                     alt.value("seagreen"),
                     alt.value("firebrick")
                 ),
-                tooltip=["Zip_Label", "Home_Price", "Rent", "Predicted_Rent_National", "Rent_Difference"]
+                tooltip=[
+                    alt.Tooltip("Zip_Label:N", title="ZIP"),
+                    alt.Tooltip("Home_Price:Q", title="Home Price", format="$,.0f"),
+                    alt.Tooltip("Rent:Q", title="Rent", format="$,.0f"),
+                    alt.Tooltip("Predicted_Rent_National:Q", title="Predicted Rent", format="$,.0f"),
+                    alt.Tooltip("Rent_Difference:Q", title="Rent Difference", format="$,.0f")
+                ]
             )
 
             x_vals = np.linspace(local["Home_Price"].min(), local["Home_Price"].max(), 100)
